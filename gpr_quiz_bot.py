@@ -20,8 +20,11 @@ import os
 
 from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from asynctinydb import TinyDB, UUID, IncreID, Document
+# import asynctinydb
 
 GUESSES_CHANNEL_ID = -1002318487709
+db = TinyDB('db.json')
 
 # Enable logging
 logging.basicConfig(
@@ -54,8 +57,26 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     
     guess = update.message.text.replace("/guess ", "", 1)
 
+    # Store the guess in the db
+    await db.insert({ 'type': 'guess', 
+            'username': update.message.from_user.username, 
+            'user_id': update.message.from_user.id, 
+            'date': update.message.date.timestamp(),
+            'guess': guess })
+
     # Let the user know their guess has been recorded
-    await update.message.reply_text(f"Your guess: \"{guess}\" has been recorded :)")
+    await update.message.reply_text(f"Your guess: \"{guess}\" has been recorded. Thanks for playing!")
+    print(f"username: {update.message.from_user.username}, chat_id: {update.message.from_user.id}, date: {update.message.date.timestamp()}")
+    
+    
+async def guesses_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    guesses = Query()
+    results = db.search(guesses.type == "guess")
+
+    for result in results:
+        print(result.guess)
+
+
 
 
 def main() -> None:
@@ -67,6 +88,7 @@ def main() -> None:
     # application.add_handler(CommandHandler("add_to_guesses_channel", add_to_guesses_channel))
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("guess", guess_command))
+    application.add_handler(CommandHandler("guesses", guesses_command))
 
     # on non command i.e message - echo the message on Telegram
     # application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
