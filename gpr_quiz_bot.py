@@ -19,11 +19,13 @@ import logging
 import os
 
 from telegram import ForceReply, Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, ConversationHandler, filters
 from asynctinydb import TinyDB, UUID, IncreID, Document, Query, where
 # import asynctinydb
 
 GUESSES_CHANNEL_ID = -1002318487709
+DAY_OF_WEEK, ARTIST_NAME, SONG_TITLE = range(3)
+
 db = TinyDB('db.json')
 
 # Enable logging
@@ -125,6 +127,30 @@ def main() -> None:
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, no_command_issued))
+
+    application.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("/review", review)],
+        states={
+            DAY_OF_WEEK: [
+                MessageHandler(
+                    filters.Regex("^(Age|Favourite colour|Number of siblings)$"), regular_choice
+                ),
+                MessageHandler(filters.Regex("^Something else...$"), custom_choice),
+            ],
+            ARTIST_NAME: [
+                MessageHandler(
+                    filters.TEXT & ~(filters.COMMAND | filters.Regex("^Done$")), regular_choice
+                )
+            ],
+            SONG_TITLE: [
+                MessageHandler(
+                    filters.TEXT & ~(filters.COMMAND | filters.Regex("^Done$")),
+                    received_information,
+                )
+            ],
+        },
+        fallbacks=[MessageHandler(filters.Regex("^Done$"), done)],
+    ))
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
