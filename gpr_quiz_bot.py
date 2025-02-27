@@ -20,7 +20,7 @@ import os
 
 from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
-from asynctinydb import TinyDB, UUID, IncreID, Document
+from asynctinydb import TinyDB, UUID, IncreID, Document, Query, where
 # import asynctinydb
 
 GUESSES_CHANNEL_ID = -1002318487709
@@ -48,36 +48,66 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         rf"Hi {user.mention_html()}!",
         reply_markup=ForceReply(selective=True),
     )
+
+
+
+def full_name_from_update(update) -> str:
+    full_name = update.effective_user.first_name
     
+    if update.effective_user.last_name:
+        full_name += " " + update.effective_user.last_name
+
+    return full_name
+
+
+
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     # Forward the guess to the guesses channel
     await context.bot.forward_message(chat_id=GUESSES_CHANNEL_ID,
                                 from_chat_id=update.message.from_user.id,
                                 message_id=update.message.message_id)
+
+    result = await db.get((where('user_id') == update.effective_user.id) & (where('type') == "guess"))
     
+    if not result:
+        await record_and_respond_to_guess(update)
+    else:
+        guess = result['guess']
+        await update.message.reply_text(f"You have already made a guess today. Your guess was: {guess}")
+
+
+
+async def record_and_respond_to_guess(update):
     guess = update.message.text.replace("/guess ", "", 1)
+    full_name = full_name_from_update(update)
 
     # Store the guess in the db
     await db.insert({ 'type': 'guess', 
-            'username': update.message.from_user.username, 
-            'user_id': update.message.from_user.id, 
+            'username': update.effective_user.username,
+            'full_name': full_name,
+            'user_id': update.effective_user.id, 
             'date': update.message.date.timestamp(),
             'guess': guess })
 
     # Let the user know their guess has been recorded
     await update.message.reply_text(f"Your guess: \"{guess}\" has been recorded. Thanks for playing!")
-    print(f"username: {update.message.from_user.username}, chat_id: {update.message.from_user.id}, date: {update.message.date.timestamp()}")
+    # print(f"username: {update.message.from_user.username}, chat_id: {update.message.from_user.id}, date: {update.message.date.timestamp()}")
     
     
 async def guesses_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     guesses = Query()
-    results = db.search(guesses.type == "guess")
+    results = await db.search(guesses.type == "guess")
+    print(results)
+    for document in results:
+        print(document['guess'])
 
-    for result in results:
-        print(result.guess)
+async def wipe_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await db.truncate()
+    await update.message.reply_text("The database has been wiped")
 
 
-
+async def no_command_issued(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"To make a guess, use the /guess command e.g. \"/guess never gonna give you up by rick astley\"")
 
 def main() -> None:
     """Start the bot."""
@@ -90,8 +120,11 @@ def main() -> None:
     application.add_handler(CommandHandler("guess", guess_command))
     application.add_handler(CommandHandler("guesses", guesses_command))
 
+    # TODO: REMOVE BEFORE LAUNCH THIS IS A BAD COMMAND!!!
+    application.add_handler(CommandHandler("wipe", wipe_command))
+
     # on non command i.e message - echo the message on Telegram
-    # application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, no_command_issued))
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
