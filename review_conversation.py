@@ -10,7 +10,7 @@ from telegram.ext import (
 from datetime import datetime, timedelta, date
 from typing import Optional, List
 from dataclasses import dataclass
-from data import Round, Guess, get_rounds, get_guesses_for_timerange
+from data import Round, Guess, get_rounds, guesses_for_day
 
 @dataclass
 class Review:
@@ -169,10 +169,8 @@ async def handle_song_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_review = context.user_data['current_review']
     current_review.song_title = input_text.strip()
     
-    # Get guesses from data layer
-    day_start = int(datetime.combine(current_review.day_to_review, datetime.min.time()).timestamp())
-    day_end = int(datetime.combine(current_review.day_to_review, datetime.max.time()).timestamp())
-    guesses = get_guesses_for_timerange(day_start, day_end)
+    # Get guesses for the day
+    guesses = await guesses_for_day(current_review.day_to_review)
     
     # Store guesses for fixing marking mistakes
     context.user_data['current_guesses'] = guesses

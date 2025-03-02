@@ -5,7 +5,6 @@ from telegram.ext import (
     ConversationHandler,
     filters,
 )
-from asynctinydb import Query, where
 from data import create_guess, get_todays_guess
 
 # Channel ID for forwarding guesses

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
 from typing import Optional, List
 from asynctinydb import TinyDB, Query, where
 
@@ -64,8 +64,44 @@ async def get_rounds() -> List[Round]:
         ) for r in results
     ]
 
-async def get_guesses_for_timerange(start_timestamp: int, end_timestamp: int) -> List[Guess]:
-    """Get all guesses between start_timestamp and end_timestamp (inclusive)."""
+def get_game_day_timestamps(target_date: date, current_time: Optional[time] = None) -> tuple[int, int]:
+    """
+    Get the start and end timestamps for a game day.
+    A game day starts and ends at first_clue_time (6 AM).
+    
+    Args:
+        target_date: The date to get timestamps for
+        current_time: Optional current time to determine if we're before/after first_clue_time
+                     If not provided, assumes we want the full game day for target_date
+    
+    Returns:
+        tuple[int, int]: (start_timestamp, end_timestamp) in seconds since epoch
+    """
+    if current_time and current_time < first_clue_time:
+        # If it's before 6 AM, we're still in the previous game day
+        start_date = target_date - timedelta(days=1)
+    else:
+        start_date = target_date
+        
+    start_timestamp = int(datetime.combine(start_date, first_clue_time).timestamp())
+    end_timestamp = int(datetime.combine(start_date + timedelta(days=1), first_clue_time).timestamp())
+    return start_timestamp, end_timestamp
+
+async def marked_guesses_for_day(target_date: date, song_title: str, artist_name: str) -> List[Guess]:
+    """
+    Get all guesses made on a specific day and mark them against the correct song.
+    A day starts at first_clue_time (6 AM) and ends at first_clue_time the next day.
+    
+    Args:
+        target_date: The date to get guesses for
+        song_title: The correct song title to check guesses against
+        artist_name: The correct artist name to check guesses against
+        
+    Returns:
+        List[Guess]: List of guesses made on that day, marked for correctness
+    """
+    start_timestamp, end_timestamp = get_game_day_timestamps(target_date)
+    
     guesses_query = Query()
     results = await db.search(
         (guesses_query.type == "guess") & 
@@ -77,8 +113,8 @@ async def get_guesses_for_timerange(start_timestamp: int, end_timestamp: int) ->
             guesser_id=g['guesser_id'],
             guesser_name=g['guesser_name'],
             guess_text=g['guess_text'],
-            artist_name_correct=False,  # Default to false, will be set during review
-            song_title_correct=False,   # Default to false, will be set during review
+            artist_name_correct=artist_name.lower() in g['guess_text'].lower(),
+            song_title_correct=song_title.lower() in g['guess_text'].lower(),
             timestamp=int(g['timestamp'])
         ) for g in results
     ]
@@ -103,27 +139,6 @@ async def save_round(round: Round) -> bool:
     await db.insert(round.to_dict())
     return True
 
-async def update_guess_marking(guess_id: int, artist_correct: bool, title_correct: bool) -> None:
-    """Update the marking for a specific guess."""
-    # TODO: Implement this when needed
-    pass 
-
-async def get_todays_guess(guesser_id: int) -> Optional[str]:
-    """
-    Check if a user has already made a guess today.
-    
-    Args:
-        guesser_id: The Telegram user ID of the guesser
-        
-    Returns:
-        Optional[str]: The guess text if found for today, None otherwise
-    """
-    result = await db.get(
-        (where('type') == "guess") & 
-        (where('guesser_id') == guesser_id)
-    )
-    return result['guess_text'] if result else None
-
 async def create_guess(guesser_id: int, guesser_name: str, guess_text: str) -> None:
     """
     Create a new guess in the database.
@@ -138,5 +153,48 @@ async def create_guess(guesser_id: int, guesser_name: str, guess_text: str) -> N
         'guesser_id': guesser_id,
         'guesser_name': guesser_name,
         'guess_text': guess_text,
-        'timestamp': int(datetime.now().timestamp())
-    }) 
+        'timestamp': int(datetime.now().timestamp()),
+        'artist_name_correct': None,  # Initially None until reviewed
+        'song_title_correct': None    # Initially None until reviewed
+    })
+
+async def get_todays_guess(guesser_id: int) -> Optional[str]:
+    """
+    Check if a user has already made a guess for the current game day.
+    A game day starts and ends at first_clue_time (6 AM).
+    
+    Args:
+        guesser_id: The Telegram user ID of the guesser
+        
+    Returns:
+        Optional[str]: The guess text if found for the current game day, None otherwise
+    """
+    now = datetime.now()
+    start_timestamp, end_timestamp = get_game_day_timestamps(now.date(), now.time())
+    
+    result = await db.get(
+        (where('type') == "guess") & 
+        (where('guesser_id') == guesser_id) &
+        (where('timestamp') >= start_timestamp) &
+        (where('timestamp') <= end_timestamp)
+    )
+    return result['guess_text'] if result else None 
+
+async def update_guesses_marking(guesses: List[Guess]) -> None:
+    """
+    Update the marking for multiple guesses at once.
+    
+    Args:
+        guesses: List of Guess objects with updated marking information
+    """
+    for guess in guesses:
+        guesses_query = Query()
+        await db.update(
+            {
+                'artist_name_correct': guess.artist_name_correct,
+                'song_title_correct': guess.song_title_correct
+            },
+            (guesses_query.type == "guess") & 
+            (guesses_query.guesser_id == guess.guesser_id) &
+            (guesses_query.guess_text == guess.guess_text)  # Additional check to ensure we update the correct guess
+        ) 
