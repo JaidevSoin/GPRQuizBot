@@ -108,6 +108,22 @@ async def update_guess_marking(guess_id: int, artist_correct: bool, title_correc
     # TODO: Implement this when needed
     pass 
 
+async def get_todays_guess(guesser_id: int) -> Optional[str]:
+    """
+    Check if a user has already made a guess today.
+    
+    Args:
+        guesser_id: The Telegram user ID of the guesser
+        
+    Returns:
+        Optional[str]: The guess text if found for today, None otherwise
+    """
+    result = await db.get(
+        (where('type') == "guess") & 
+        (where('guesser_id') == guesser_id)
+    )
+    return result['guess_text'] if result else None
+
 async def create_guess(guesser_id: int, guesser_name: str, guess_text: str) -> None:
     """
     Create a new guess in the database.

@@ -45,58 +45,6 @@ with open(os.path.dirname(os.path.realpath(__file__)) + '/api_token.txt') as fil
 
 
 
-
-
-def full_name_from_update(update) -> str:
-    full_name = update.effective_user.first_name
-    
-    if update.effective_user.last_name:
-        full_name += " " + update.effective_user.last_name
-
-    return full_name
-
-
-
-async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Forward the guess to the guesses channel
-    await context.bot.forward_message(chat_id=GUESSES_CHANNEL_ID,
-                                from_chat_id=update.message.from_user.id,
-                                message_id=update.message.message_id)
-
-    result = await db.get((where('user_id') == update.effective_user.id) & (where('type') == "guess"))
-    
-    if not result:
-        await record_and_respond_to_guess(update)
-    else:
-        guess = result['guess']
-        await update.message.reply_text(f"You have already made a guess today. Your guess was: {guess}")
-
-
-
-async def record_and_respond_to_guess(update):
-    guess = update.message.text.replace("/guess ", "", 1)
-    full_name = full_name_from_update(update)
-
-    # Store the guess in the db
-    await db.insert({ 'type': 'guess', 
-            'username': update.effective_user.username,
-            'full_name': full_name,
-            'user_id': update.effective_user.id, 
-            'date': update.message.date.timestamp(),
-            'guess': guess })
-
-    # Let the user know their guess has been recorded
-    await update.message.reply_text(f"Your guess: \"{guess}\" has been recorded. Thanks for playing!")
-    # print(f"username: {update.message.from_user.username}, chat_id: {update.message.from_user.id}, date: {update.message.date.timestamp()}")
-    
-    
-async def guesses_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    guesses = Query()
-    results = await db.search(guesses.type == "guess")
-    print(results)
-    for document in results:
-        print(document['guess'])
-
 async def wipe_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await db.truncate()
     await update.message.reply_text("The database has been wiped")
@@ -120,7 +68,6 @@ def main() -> None:
     application.bot_data['db'] = db
 
     # Add handlers
-    application.add_handler(CommandHandler("guesses", guesses_command))
     application.add_handler(CommandHandler("wipe", wipe_command))  # TODO: Remove before launch
     application.add_handler(new_round_conversation_handler())
     application.add_handler(review_conversation_handler())

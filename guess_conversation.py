@@ -6,19 +6,19 @@ from telegram.ext import (
     filters,
 )
 from asynctinydb import Query, where
-from data import create_guess
+from data import create_guess, get_todays_guess
 
 # Channel ID for forwarding guesses
 GUESSES_CHANNEL_ID = -1002318487709
 
-def full_name_from_update(update: Update) -> str:
+def name_from_update(update: Update) -> str:
     """Extract the full name from a Telegram update."""
-    full_name = update.effective_user.first_name
+    name = update.effective_user.first_name
     
     if update.effective_user.last_name:
-        full_name += " " + update.effective_user.last_name
+        name += " " + update.effective_user.last_name
 
-    return full_name
+    return name
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /guess command."""
@@ -30,29 +30,24 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
     # Check if user has already guessed today
-    guesses = Query()
-    result = await context.bot_data['db'].get(
-        (where('user_id') == update.effective_user.id) & 
-        (where('type') == "guess")
-    )
+    existing_guess = await get_todays_guess(update.effective_user.id)
     
-    if not result:
+    if existing_guess is None:
         await record_and_respond_to_guess(update)
     else:
-        guess = result['guess']
         await update.message.reply_text(
-            f"You have already made a guess today. Your guess was: {guess}"
+            f"You have already made a guess today. Your guess was: {existing_guess}"
         )
 
 async def record_and_respond_to_guess(update: Update) -> None:
     """Record a user's guess and send confirmation."""
     guess = update.message.text.replace("/guess ", "", 1)
-    full_name = full_name_from_update(update)
+    name = name_from_update(update)
 
     # Store the guess in the db
     await create_guess(
         guesser_id=update.effective_user.id,
-        guesser_name=full_name,
+        guesser_name=name,
         guess_text=guess
     )
 
