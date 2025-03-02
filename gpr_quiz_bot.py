@@ -21,10 +21,13 @@ import os
 from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, ConversationHandler, filters
 from asynctinydb import TinyDB, UUID, IncreID, Document, Query, where
-# import asynctinydb
+
+from new_round import new_round_conversation_handler
+from review import review_conversation_handler
+
+
 
 GUESSES_CHANNEL_ID = -1002318487709
-DAY_OF_WEEK, ARTIST_NAME, SONG_TITLE = range(3)
 
 db = TinyDB('db.json')
 
@@ -111,7 +114,14 @@ async def wipe_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def no_command_issued(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"To make a guess, use the /guess command e.g. \"/guess never gonna give you up by rick astley\"")
 
+
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Cancelling")
+
+
+
 def main() -> None:
+    print("is the b bot actualy running?")
     """Start the bot."""
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TOKEN).build()
@@ -125,32 +135,12 @@ def main() -> None:
     # TODO: REMOVE BEFORE LAUNCH THIS IS A BAD COMMAND!!!
     application.add_handler(CommandHandler("wipe", wipe_command))
 
+
+    application.add_handler(new_round_conversation_handler())
+    application.add_handler(review_conversation_handler())
+
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, no_command_issued))
-
-    application.add_handler(ConversationHandler(
-        entry_points=[CommandHandler("/review", review)],
-        states={
-            DAY_OF_WEEK: [
-                MessageHandler(
-                    filters.Regex("^(Age|Favourite colour|Number of siblings)$"), regular_choice
-                ),
-                MessageHandler(filters.Regex("^Something else...$"), custom_choice),
-            ],
-            ARTIST_NAME: [
-                MessageHandler(
-                    filters.TEXT & ~(filters.COMMAND | filters.Regex("^Done$")), regular_choice
-                )
-            ],
-            SONG_TITLE: [
-                MessageHandler(
-                    filters.TEXT & ~(filters.COMMAND | filters.Regex("^Done$")),
-                    received_information,
-                )
-            ],
-        },
-        fallbacks=[MessageHandler(filters.Regex("^Done$"), done)],
-    ))
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
@@ -158,3 +148,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
