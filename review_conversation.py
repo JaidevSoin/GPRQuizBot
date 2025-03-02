@@ -7,30 +7,17 @@ from telegram.ext import (
     ConversationHandler,
     filters,
 )
-from dataclasses import dataclass
 from datetime import datetime, timedelta, date
 from typing import Optional, List
-
-@dataclass
-class Round:
-    name: str
-    start_date: datetime
-    duration_days: int
+from dataclasses import dataclass
+from data import Round, Guess, get_rounds, get_guesses_for_timerange
 
 @dataclass
 class Review:
+    """Represents the state of a review conversation."""
     artist_name: Optional[str]
     song_title: Optional[str]
     day_to_review: Optional[date]
-
-@dataclass
-class Guess:
-    guesser_id: int
-    guesser_name: str
-    guess_text: str
-    artist_name_correct: bool
-    song_title_correct: bool
-    guessed_at: int  # seconds since epoch
 
 # Define conversation states
 ROUND_NUMBER_STATE, DAY_NUMBER_STATE, ARTIST_NAME_STATE, SONG_TITLE_STATE, FIX_MARKING_STATE, REMARK_ARTIST_NAME_STATE, REMARK_SONG_TITLE_STATE = range(7)
@@ -86,15 +73,7 @@ async def review_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     Entry point for the review conversation.
     Gets available rounds from data layer and displays them to user.
     """
-    # TODO: Get rounds from data layer
-    # rounds: List[Round] = get_rounds_from_data_layer()
-    
-    # For now, mock response with sample rounds
-    mock_rounds = [
-        Round("First Round", datetime.now(), 5),
-        Round("Second Round", datetime.now(), 5),
-        Round("Third Round", datetime.now(), 5)
-    ]
+    rounds = get_rounds()
     
     # Initialize empty review
     context.user_data['current_review'] = Review(
@@ -104,10 +83,10 @@ async def review_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     # Format rounds into numbered list
-    rounds_text = f"Which round would you like to review? (1-{len(mock_rounds)})\n"
-    rounds_text += "\n".join(f"{i+1}. {round.name}" for i, round in enumerate(mock_rounds))
+    rounds_text = f"Which round would you like to review? (1-{len(rounds)})\n"
+    rounds_text += "\n".join(f"{i+1}. {round.name}" for i, round in enumerate(rounds))
     
-    context.user_data['rounds'] = mock_rounds
+    context.user_data['rounds'] = rounds
     await update.message.reply_text(rounds_text)
     return ROUND_NUMBER_STATE
 
@@ -117,14 +96,14 @@ async def handle_round_number(update: Update, context: ContextTypes.DEFAULT_TYPE
     Validates input and shows available days for selected round.
     """
     input_text = update.message.text
-    mock_rounds = context.user_data.get('rounds', [])
+    rounds = context.user_data.get('rounds', [])
     
-    round_num = parse_int_option(input_text, len(mock_rounds))
+    round_num = parse_int_option(input_text, len(rounds))
     if round_num is None:
-        await update.message.reply_text(f"Please enter a valid round number (1-{len(mock_rounds)})")
+        await update.message.reply_text(f"Please enter a valid round number (1-{len(rounds)})")
         return ROUND_NUMBER_STATE
     
-    selected_round = mock_rounds[round_num - 1]
+    selected_round = rounds[round_num - 1]
     context.user_data['selected_round'] = selected_round
     
     # Get days for the selected round
@@ -190,21 +169,13 @@ async def handle_song_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     current_review = context.user_data['current_review']
     current_review.song_title = input_text.strip()
     
-    # TODO: Get guesses from data layer
-    # Convert date to start/end timestamps for the data layer query
+    # Get guesses from data layer
     day_start = int(datetime.combine(current_review.day_to_review, datetime.min.time()).timestamp())
     day_end = int(datetime.combine(current_review.day_to_review, datetime.max.time()).timestamp())
-    # guesses = get_guesses_for_timerange(day_start, day_end)
-    
-    # For now, mock some guesses
-    mock_guesses = [
-        Guess(1, "Alice", "never gonna give you up by rick astley", True, True, int(datetime.now().timestamp())),
-        Guess(2, "Bob", "never gonna let you down by rick astley", True, False, int(datetime.now().timestamp())),
-        Guess(3, "Charlie", "take on me by a-ha", False, False, int(datetime.now().timestamp()))
-    ]
+    guesses = get_guesses_for_timerange(day_start, day_end)
     
     # Store guesses for fixing marking mistakes
-    context.user_data['current_guesses'] = mock_guesses
+    context.user_data['current_guesses'] = guesses
     
     await send_review_message(update, context)
     return FIX_MARKING_STATE
@@ -212,19 +183,19 @@ async def handle_song_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def send_review_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Helper function to format and send the review message."""
     current_review = context.user_data['current_review']
-    mock_guesses = context.user_data['current_guesses']
+    guesses = context.user_data['current_guesses']
     
     day_name = current_review.day_to_review.strftime('%A')
     review_text = f"Review for {day_name}:\n"
     review_text += f"Correct Answer: {current_review.song_title} by {current_review.artist_name}\n\n"
     review_text += "Guesses:\n"
     
-    for i, guess in enumerate(mock_guesses, 1):
-        title_mark = "✅" if guess.song_title_correct else "❌"
+    for i, guess in enumerate(guesses, 1):
         artist_mark = "✅" if guess.artist_name_correct else "❌"
-        review_text += f"{i}. {guess.guess_text}\n   {artist_} Title ({guess.gumark} Artist {title_markesser_name})\n\n"
+        title_mark = "✅" if guess.song_title_correct else "❌"
+        review_text += f"{i}. {guess.guess_text}\n   {title_mark} Title {artist_mark} Artist ({guess.guesser_name})\n\n"
     
-    review_text += f"Enter a guess number to fix any mistakes in marking (1-{len(mock_guesses)}), or enter /done to complete"
+    review_text += f"Enter a guess number to fix any mistakes in marking (1-{len(guesses)}), or enter /done to complete"
     await update.message.reply_text(review_text)
 
 async def handle_fix_marking(update: Update, context: ContextTypes.DEFAULT_TYPE):

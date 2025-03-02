@@ -22,10 +22,9 @@ from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, ConversationHandler, filters
 from asynctinydb import TinyDB, UUID, IncreID, Document, Query, where
 
-from new_round import new_round_conversation_handler
-from review import review_conversation_handler
-
-
+from new_round_conversation import new_round_conversation_handler
+from review_conversation import review_conversation_handler
+from guess_conversation import guess_conversation_handler
 
 GUESSES_CHANNEL_ID = -1002318487709
 
@@ -44,15 +43,7 @@ logger = logging.getLogger(__name__)
 with open(os.path.dirname(os.path.realpath(__file__)) + '/api_token.txt') as file:
     TOKEN = file.readline().strip()
 
-# Define a few command handlers. These usually take the two arguments update and
-# context.
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a message when the command /start is issued."""
-    user = update.effective_user
-    await update.message.reply_html(
-        rf"Hi {user.mention_html()}!",
-        reply_markup=ForceReply(selective=True),
-    )
+
 
 
 
@@ -121,25 +112,21 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main() -> None:
-    print("is the b bot actualy running?")
     """Start the bot."""
     # Create the Application and pass it your bot's token.
     application = Application.builder().token(TOKEN).build()
 
-    # on different commands - answer in Telegram
-    # application.add_handler(CommandHandler("add_to_guesses_channel", add_to_guesses_channel))
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("guess", guess_command))
+    # Store db in bot_data for access in conversation handlers
+    application.bot_data['db'] = db
+
+    # Add handlers
     application.add_handler(CommandHandler("guesses", guesses_command))
-
-    # TODO: REMOVE BEFORE LAUNCH THIS IS A BAD COMMAND!!!
-    application.add_handler(CommandHandler("wipe", wipe_command))
-
-
+    application.add_handler(CommandHandler("wipe", wipe_command))  # TODO: Remove before launch
     application.add_handler(new_round_conversation_handler())
     application.add_handler(review_conversation_handler())
+    application.add_handler(guess_conversation_handler())
 
-    # on non command i.e message - echo the message on Telegram
+    # Handle non-command messages
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, no_command_issued))
 
     # Run the bot until the user presses Ctrl-C
